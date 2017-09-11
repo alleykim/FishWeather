@@ -1,11 +1,11 @@
 package com.tistory.alley.fishweather;
 
 
-import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
-import android.location.LocationManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
@@ -38,20 +38,23 @@ import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.os.Build;
-import android.util.Log;
-import android.view.View;
-import android.widget.Button;
 import android.widget.Toast;
 
-import com.google.firebase.iid.FirebaseInstanceId;
-import com.google.firebase.messaging.FirebaseMessaging;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserFactory;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.StringReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
 
 
 public class MapsActivity extends AppCompatActivity implements OnMapReadyCallback {
 
+    private TextView textView_longWeather;
 
     private static final String TAG = MapsActivity.class.getSimpleName();
     private GoogleMap mMap;
@@ -112,6 +115,12 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+
+        Log.d(TAG,"Before receive");
+        textView_longWeather = (TextView) findViewById(R.id.informationTextView);
+
+        new ReceiveWeather().execute();
+        Log.d(TAG,"After receive");
 
 
 /*
@@ -228,6 +237,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     /**
      * Sets up the options menu.
+     *
      * @param menu The options menu.
      * @return Boolean.
      */
@@ -239,6 +249,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     /**
      * Handles a click on the menu option to get a place.
+     *
      * @param item The menu item to handle.
      * @return Boolean.
      */
@@ -283,7 +294,7 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                     }
                 });
             }
-        } catch (SecurityException e)  {
+        } catch (SecurityException e) {
             Log.e("Exception: %s", e.getMessage());
         }
     }
@@ -459,8 +470,176 @@ public class MapsActivity extends AppCompatActivity implements OnMapReadyCallbac
                 mLastKnownLocation = null;
                 getLocationPermission();
             }
-        } catch (SecurityException e)  {
+        } catch (SecurityException e) {
             Log.e("Exception: %s", e.getMessage());
+        }
+    }
+
+    public class ReceiveWeather extends AsyncTask<URL, Integer, Long> {
+
+
+        ArrayList<LongWeather> longWeathers = new ArrayList<LongWeather>();
+        HttpURLConnection urlConnection = null;
+        BufferedReader reader = null;
+        String weatherStr = null;
+
+
+        protected Long doInBackground(URL... urls) {
+
+            try {
+                // Construct the URL for the OpenWeatherMap query
+                // Possible parameters are avaiable at OWM's forecast API page, at
+                // http://openweathermap.org/API#forecast
+                URL url = new URL("http://www.kma.go.kr/weather/forecast/mid-term-rss3.jsp?stnId=109");
+
+                // Create the request to OpenWeatherMap, and open the connection
+                urlConnection = (HttpURLConnection) url.openConnection();
+                urlConnection.setRequestMethod("GET");
+                urlConnection.connect();
+
+                // Read the input stream into a String
+                InputStream inputStream = urlConnection.getInputStream();
+                StringBuffer buffer = new StringBuffer();
+                if (inputStream == null) {
+                    // Nothing to do.
+                    return null;
+                }
+                reader = new BufferedReader(new InputStreamReader(inputStream));
+
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    // Since it's JSON, adding a newline isn't necessary (it won't affect parsing)
+                    // But it does make debugging a *lot* easier if you print out the completed
+                    // buffer for debugging.
+                    buffer.append(line + "\n");
+                }
+
+                if (buffer.length() == 0) {
+                    // Stream was empty.  No point in parsing.
+                    return null;
+                }
+                weatherStr = buffer.toString();
+            } catch (Exception e) {
+                Log.e("PlaceholderFragment", "Error ", e);
+                // If the code didn't successfully get the weather data, there's no point in attemping
+                // to parse it.
+                return null;
+            } finally {
+                if (urlConnection != null) {
+                    urlConnection.disconnect();
+                }
+                if (reader != null) {
+                    try {
+                        reader.close();
+                    } catch (final Exception e) {
+                        Log.e("PlaceholderFragment", "Error closing stream", e);
+                    }
+                }
+            }
+
+            try {
+                parseWeekXML(weatherStr);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            return null;
+        }
+
+
+        protected void onPostExecute(Long result) {
+            String data = "";
+
+            for(int i=0; i<longWeathers.size() && i < 1; i++) {
+                data += longWeathers.get(i).getWf()
+                        + " 최고온도" +
+                        longWeathers.get(i).getTmn()
+                        + " 최저온도" +
+                        longWeathers.get(i).getTmx();
+            }
+
+            textView_longWeather.setText(data);
+            mMap.addMarker(new MarkerOptions().position(mDefaultLocation)
+                    .title("Seoul")
+                    .snippet(data));
+        }
+
+        void parseWeekXML(String xml) {
+            try {
+                String tagName = "";
+                boolean onCity = false;
+                boolean onTmEf = false;
+                boolean onWf = false;
+                boolean onTmn = false;
+                boolean onTmx = false;
+                boolean onEnd = false;
+                boolean isItemTag1 = false;
+                int i = 0;
+
+                XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
+                XmlPullParser parser = factory.newPullParser();
+
+                parser.setInput(new StringReader(xml));
+
+                int eventType = parser.getEventType();
+
+                while (eventType != XmlPullParser.END_DOCUMENT) {
+                    if (eventType == XmlPullParser.START_TAG) {
+                        tagName = parser.getName();
+
+                        if (tagName.equals("city")) {
+                            eventType = parser.next();
+
+                            if (parser.getText().equals("서울")) {    // 파싱하고 싶은 지역 이름을 쓴다
+                                onCity = true;
+                            } else {
+                                if (onCity) { // 이미 parsing을 끝냈을 경우
+                                    break;
+                                } else {        // 아직 parsing을 못했을 경우
+                                    onCity = false;
+                                }
+                            }
+                        }
+
+                        if (tagName.equals("data") && onCity) {
+                            longWeathers.add(new LongWeather());
+                            onEnd = false;
+                            isItemTag1 = true;
+                        }
+                    } else if (eventType == XmlPullParser.TEXT && isItemTag1 && onCity) {
+                        if (tagName.equals("tmEf") && !onTmEf) {
+                            longWeathers.get(i).setTmEf(parser.getText());
+                            onTmEf = true;
+                        }
+                        if (tagName.equals("wf") && !onWf) {
+                            longWeathers.get(i).setWf(parser.getText());
+                            onWf = true;
+                        }
+                        if (tagName.equals("tmn") && !onTmn) {
+                            longWeathers.get(i).setTmn(parser.getText());
+                            onTmn = true;
+                        }
+                        if (tagName.equals("tmx") && !onTmx) {
+                            longWeathers.get(i).setTmx(parser.getText());
+                            onTmx = true;
+                        }
+                    } else if (eventType == XmlPullParser.END_TAG) {
+                        if (tagName.equals("reliability") && onEnd == false) {
+                            i++;
+                            onTmEf = false;
+                            onWf = false;
+                            onTmn = false;
+                            onTmx = false;
+                            isItemTag1 = false;
+                            onEnd = true;
+                        }
+                    }
+
+                    eventType = parser.next();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 }

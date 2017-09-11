@@ -1,0 +1,42 @@
+{
+  "project_info": {
+    "project_number": "852251483683",
+    "firebase_url": "https://fishweather-97b82.firebaseio.com",
+    "project_id": "fishweather-97b82",
+    "storage_bucket": "fishweather-97b82.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:852251483683:android:74f675559b356958",
+        "android_client_info": {
+          "package_name": "com.tistory.alley.fishweather"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "852251483683-7k4fie0f12pfv30rhlitd3drek7rueq7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCHsVoDC55HF2jp2p0GLz3xYirZmJ-gfGA"
+        }
+      ],
+      "services": {
+        "analytics_service": {
+          "status": 1
+        },
+        "appinvite_service": {
+          "status": 1,
+          "other_platform_oauth_client": []
+        },
+        "ads_service": {
+          "status": 2
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
